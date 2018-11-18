@@ -37,7 +37,7 @@ class GeneralNet:
         self.b = []
         self.size = []
 
-    def inference(self,images,keep_prob=1.0):
+    def inference(self,images,keep_prob=1.0,silence=True):
         current_act = images #[b,h,w,c]
         self.size.append(int(images.shape[3]))
         net = {}
@@ -84,8 +84,12 @@ class GeneralNet:
                     raise ValueError('cannot solve layer: ' + c_str)
             else:
                 raise ValueError('cannot solve layer: ' + c_str)
-            print('solved '+c_str+str(current_act.shape))
+            if not silence:
+                print('solved '+c_str+str(current_act.shape))
             net[c_str + str(i)] = current_act
+        self.W = []
+        self.size = []
+        self.b = []
         return current_act,net
 
     @property
