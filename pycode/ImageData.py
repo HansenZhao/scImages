@@ -25,11 +25,11 @@ class PixelCentralSet(object):
         self.normalization = normalization
         if self.normalization and self.normalization[0]:
             if self.normalization[0].startswith('median'):
-                self.raw_image = self.raw_image/np.median(self.raw_image,axis=(2,3),keepdims=True)
+                self.raw_image = np.divide(self.raw_image,np.median(self.raw_image,axis=(2,3),keepdims=True),dtype=np.float32)
             elif self.normalization[0].startswith('mean'):
-                self.raw_image = self.raw_image / np.mean(self.raw_image, axis=(2, 3), keepdims=True)
+                self.raw_image = np.divide(self.raw_image,np.mean(self.raw_image, axis=(2, 3), keepdims=True),dtype=np.float32)
             elif self.normalization[0].startswith('max'):
-                self.raw_image = self.raw_image / np.max(self.raw_image, axis=(2, 3), keepdims=True)
+                self.raw_image = np.divide(self.raw_image,np.max(self.raw_image, axis=(2, 3), keepdims=True),dtype=np.float32)
 
         self.half_width = half_width
         self.tags = np.unique(self.raw_tag)
@@ -38,8 +38,10 @@ class PixelCentralSet(object):
         self.is_for_train_dict = dict()
         self.batch_counter_dict = dict()
 
-        mask = np.zeros((self.raw_image.shape[0],self.raw_image.shape[2],self.raw_image.shape[3]))
+        mask = np.zeros((self.raw_image.shape[0],self.raw_image.shape[2],self.raw_image.shape[3])) #[nImage,h,w]
         mask[:,self.half_width:-self.half_width,self.half_width:-self.half_width] = 1
+        self.sequential_pos = np.argwhere(mask)
+        self.sequential_pos_mark = 0
         for tag in self.tags:
             self.tag_pos_dict[tag] = np.argwhere(np.logical_and(self.raw_tag == tag,mask))
             self.is_for_train_dict[tag] = np.random.rand(self.tag_pos_dict[tag].shape[0]) > self.develope_ratio
@@ -59,7 +61,7 @@ class PixelCentralSet(object):
             self.reset_batch()
             self.random_patch_pos()
         train_tag = np.zeros(shape=size,dtype=np.int32)
-        train_images = np.zeros((size,self.nChannel,self.half_width*2+1,self.half_width*2+1))
+        train_images = np.zeros((size,self.nChannel,self.half_width*2+1,self.half_width*2+1),dtype=np.float32)
         counter = 0
         positions = []
         transform_info = []
@@ -100,6 +102,37 @@ class PixelCentralSet(object):
             tmp[range(size),train_tag-1] = 1
             train_tag = tmp
         return train_images,train_tag,positions,transform_info
+    def seq_set(self,size=128,one_hot = False, fix_transform = None):
+        start_index = self.sequential_pos_mark
+        end_index = self.sequential_pos_mark + size
+        is_finish = False
+        if end_index > self.set_size:
+            end_index = self.set_size
+            is_finish = True
+        n_sample = end_index-start_index
+        self.sequential_pos_mark = end_index
+        tag = np.zeros(shape=size,dtype=np.int32)
+        images = np.zeros((n_sample,self.nChannel,self.half_width*2+1,self.half_width*2+1),dtype=np.float32)
+        positions = self.sequential_pos[start_index:end_index,:]
+        if not fix_transform:
+            transform_option = np.random.choice(range(8), size=n_sample, replace=True)
+        else:
+            transform_option = np.ones(shape=n_sample) * fix_transform
+        for i in range(n_sample):
+            tag[i] = self.raw_tag[positions[i,0],positions[i,1],positions[i,2]]
+            tmp =  PixelCentralSet.image_transform(self.raw_image[positions[i,0],:,
+                                                    (positions[i,1] - self.half_width):(positions[i,1]+self.half_width + 1),
+                                                    (positions[i, 2] - self.half_width):(positions[i, 2] + self.half_width + 1)],transform_option[i])
+
+            if self.normalization and self.normalization[1] and self.normalization[1].startswith('mean'):
+                tmp = tmp - np.mean(tmp,axis=(1,2),keepdims=True)
+
+            images[i, :, :, :] = tmp
+        if one_hot:
+            tmp = np.zeros(shape=(size,self.n_tag),dtype=np.int32)
+            tmp[range(size),tag-1] = 1
+            train_tag = tmp
+        return is_finish,images,tag,positions,transform_option
     def tag_sample_size(self,total_size):
         n_sample_pos = np.round(total_size * 1.0 / self.n_tag * np.ones(shape=(self.n_tag))).astype(np.int32)
         n_sample_pos[0] = n_sample_pos[0] + total_size - np.sum(n_sample_pos)
@@ -122,6 +155,8 @@ class PixelCentralSet(object):
         for tag in self.tags:
             self.batch_counter_dict[tag] = 0
         self.random_patch_pos()
+    def reset_sequential(self):
+        self.sequential_pos_mark = 0
     def random_patch_pos(self):
         for tag in self.tags:
             self.tag_pos_dict[tag] = self.tag_pos_dict[tag][np.random.choice(range(self.tag_pos_dict[tag].shape[0]),
