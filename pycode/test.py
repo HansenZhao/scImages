@@ -1,13 +1,14 @@
 import ImageData
 import tfmodel
 import tensorflow as tf
+from tensorflow.core.protobuf import saver_pb2
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.keras.datasets import mnist
 import numpy as np
 
 
-a = ImageData.PixelCentralSet(fpath='J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',half_width=2,normalization=('max',None))
-im,tag,pos,t = a.next_set(10)
+# a = ImageData.PixelCentralSet(fpath='J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',half_width=2,normalization=('max',None))
+# im,tag,pos,t = a.next_set(10)
 '''
 def random_batches(X,y,batch_size,num):
     batches = []
@@ -75,3 +76,57 @@ with tf.Session() as sess:
 
 writer.close()
 '''
+data_set = ImageData.PixelCentralSet(fpath='J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',half_width=30,normalization=('max',None))
+model = tfmodel.GeneralNet(construct_str=('conv5-6','relu','pool','conv5-16','relu','pool','flat','dense120','relu','dense84','relu','dense3'))
+im,*_ = data_set.next_set(10,for_train=False)
+model.inference(images=im.swapaxes(1,3))
+saver = tf.train.Saver()
+X = tf.placeholder(tf.float32,shape=[None,61,61,1],name='X')
+y = tf.placeholder(tf.int32,shape=[None],name='y')
+kp = tf.placeholder(tf.float32,name='keep_prob')
+tf.get_variable_scope().reuse_variables()
+logits,_ = model.inference(X)
+tag = tf.argmax(logits,axis=1)
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
+    # saver = tf.train.import_meta_graph("J:\\save\\SpaContiLeNet5-3\\model\\SpaContiLeNet5-3-55.meta")
+    cpkt = tf.train.get_checkpoint_state('J:\\save\\SpaContiLeNet5-5\\model')
+    if cpkt and cpkt.model_checkpoint_path:
+        saver.restore(sess,cpkt.model_checkpoint_path)
+        print('restore: '+ cpkt.model_checkpoint_path)
+    res_index = np.zeros(shape=(data_set.nImage,data_set.image_size[0],data_set.image_size[1]),dtype=np.int32)
+    while 1:
+        b_finish,im,_,pos,_, = data_set.seq_set(size=16384)
+        t = sess.run(tag,feed_dict={X:im.swapaxes(1,3)})
+        for i in range(t.shape[0]):
+            res_index[pos[i,0],pos[i,1],pos[i,2]] = t[i]
+        if b_finish:
+            break
+        else:
+            print('%.2f%%' %(100*data_set.sequential_pos_mark/data_set.set_size))
+    for i in range(data_set.nImage):
+        np.savetxt('tag'+str(i)+'.csv',res_index[i,...],delimiter=',')
+
+
+# saver2 = tf.train.Saver()
+# with tf.Session() as sess2:
+#     sess2.run(tf.global_variables_initializer())
+#     sess2.run(tf.local_variables_initializer())
+#     # saver = tf.train.import_meta_graph("J:\\save\\SpaContiLeNet5-3\\model\\SpaContiLeNet5-3-55.meta")
+#     saver2.restore(sess2, 'J:\\save\\aa\\model')
+# a = tf.Variable(2,name='a')
+# b = tf.Variable(3,name='b')
+# c = a+b
+#
+# saver = tf.train.Saver()
+# with tf.Session() as sess:
+#     sess.run(tf.global_variables_initializer())
+#     print(sess.run(c))
+#     saver.save(sess,'./test')
+#
+# with tf.Session() as sess2:
+#     sess2.run(tf.global_variables_initializer())
+#     saver.restore(sess2,'./test')
+#     sess2.run(a)
+
