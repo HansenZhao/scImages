@@ -54,6 +54,8 @@ def train(cons_str,data_path,half_width,model_name,batch_size = 1024,lr=0.0001,k
     train_data_fetch = tf.summary.merge_all('train')
     test_data_fetch = tf.summary.merge_all('test')
 
+    max_accuarcy = 0
+
     with tf.Session() as sess:
         train_writer = tf.summary.FileWriter(save_path+ '/' + model_name + '/summary/train/',sess.graph)
         test_writer = tf.summary.FileWriter(save_path + '/' + model_name + '/summary/test/', sess.graph)
@@ -82,21 +84,27 @@ def train(cons_str,data_path,half_width,model_name,batch_size = 1024,lr=0.0001,k
             test_cost, test_accu, summ = sess.run([cross_entropy, accuracy, test_data_fetch], feed_dict={X: preproc_im(xs,half_width), y: ys, kp:1.0})
             print('testcost: %.3f, test accuracy: %.3f' % (test_cost, test_accu))
             test_writer.add_summary(summ, epoch)
-            saver.save(sess,save_path + '/' + model_name + '/model/',global_step=epoch)
             duration = time.time()-start_time
             print('loop duration: %d min, %d secon,estimate remian %d hour, %d min'
                   %(int(duration/60),duration%60,duration*(max_iter-1-epoch)/3600,int(((duration*(max_iter-1-epoch))%3600)/60)))
 
+            if test_accu > max_accuarcy:
+                max_accuarcy = test_accu
+                print(sess.run(sess.graph.get_tensor_by_name('W7:0')))
+                saver.save(sess, save_path + '/' + model_name + '/model/' + model_name, global_step=epoch)
+
+
 #
 train(('conv5-6','relu','pool','conv5-16','relu','pool','flat','dense120','relu','dense84','relu','dense3'),
-     'J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',30,'SpaContiLeNet5-1',max_iter=1000)
-tf.reset_default_graph()
-train(('conv5-6','relu','pool','conv5-16','relu','pool','flat','dense120','relu','dense84','relu','dense3'),
-     'J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',50,'SpaContiLeNet5-2',max_iter=1000)
-tf.reset_default_graph()
-train(('conv7-8','relu','pool','sconv3-16','relu','sconv3-16','relu','pool','sconv3-32','relu','sconv3-32','relu',
-       'flat','dense120','relu','dense84','relu','dense3'),
-     'J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',50,'SpaContiLeNet5-3',max_iter=2000)
+     'J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',30,'SpaContiLeNet5-5',lr=0.0005,decay=0.99,max_iter=500)
+
+# tf.reset_default_graph()
+# train(('conv5-6','relu','pool','conv5-16','relu','pool','flat','dense120','relu','dense84','relu','dense3'),
+#      'J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',50,'SpaContiLeNet5-2',max_iter=1000)
+# tf.reset_default_graph()
+# train(('conv7-8','relu','pool','sconv3-16','relu','sconv3-16','relu','pool','sconv3-32','relu','sconv3-32','relu',
+#        'flat','dense120','relu','dense84','relu','dense3'),
+#      'J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',50,'SpaContiLeNet5-3',max_iter=2000)
 # tf.reset_default_graph()
 # train(('conv5-6','relu','pool','conv5-16','relu','pool','flat','dense120','relu','dense84','relu','dense3'),
 #      'J:\\CNN-Cell-profile-XRZhang\\code\\test.mat',30,'LeNet5-2',decay=0.95,max_iter=1)
