@@ -29,3 +29,40 @@ class parameters_record(object):
         with open(fpath+'/'+fname,'w') as file:
             for key,value in self.parameter_dict.items():
                 file.write(key+'='+str(value)+'\n')
+
+class hyparam_search_csv_record(object):
+    def __init__(self,params_name,fpath=None,fname=None):
+        if fpath is None:
+            fpath = os.getcwd()
+        if fname is None:
+            fname = 'BOSeries.csv'
+        self.fpath = fpath
+        self.fname = fname
+        self.params_name = params_name
+        self.params_name.append('performance')
+        self.params_name.append('loss')
+        self.params_name.append('duration')
+        self.cache_dict = {}
+        self.__mk_file()
+    def __mk_file(self):
+        folder = os.path.exists(self.fpath)
+        if not folder:
+            os.makedirs(self.fpath)
+        with open(self.fpath + '/' + self.fname, 'w') as file:
+            for words in self.params_name:
+                file.write(words+',')
+            file.write('\n')
+    def assign_record_with_name(self,keyword_dict):
+        for key in keyword_dict:
+            self.cache_dict[key] = keyword_dict[key]
+    def commit_record(self):
+        for word in self.params_name:
+            assert word in self.cache_dict.keys(), 'Cannot found word: {w}'.format(w=word)
+        with open(self.fpath+'/'+self.fname,'a') as file:
+            for word in self.params_name:
+                file.write('{value:.3f},'.format(value=self.cache_dict.get(word)))
+            file.write('\n')
+        self.cache_dict = {}
+
+
+

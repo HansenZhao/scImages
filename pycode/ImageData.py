@@ -2,7 +2,6 @@ import scipy.io as sio
 import easygui
 import numpy as np
 
-
 class PixelCentralSet(object):
     def __init__(self,fpath = None,half_width = 30,develope_ratio = 0.1,normalization = ('median','mean')):
         if not fpath:
@@ -37,6 +36,7 @@ class PixelCentralSet(object):
         self.tag_pos_dict = dict()
         self.is_for_train_dict = dict()
         self.batch_counter_dict = dict()
+        self.image_pointer = 0
 
         mask = np.zeros((self.raw_image.shape[0],self.raw_image.shape[2],self.raw_image.shape[3])) #[nImage,h,w]
         mask[:,self.half_width:-self.half_width,self.half_width:-self.half_width] = 1
@@ -48,10 +48,10 @@ class PixelCentralSet(object):
             self.batch_counter_dict[tag] = 0
         self.random_patch_pos()
     def next_set(self,size=128,batch = True,for_train = True,one_hot = False, fix_transform = None):
-        if for_train and size > self.min_train_patch_num:
-            raise ValueError('size arg is too large, min tag num: ' + self.min_train_patch_num)
-        if not for_train and size > self.min_test_patch_num:
-            raise ValueError('size arg is too large, min tag num: ' + self.min_test_patch_num)
+        if for_train and (size/3) > self.min_train_patch_num:
+            raise ValueError('size arg is too large, min tag num: ' + str(self.min_train_patch_num))
+        if not for_train and (size/3) > self.min_test_patch_num:
+            raise ValueError('size arg is too large, min tag num: ' + str(self.min_test_patch_num))
         if size < self.n_tag:
             raise ValueError('size arg is too small, tag num: ' + str(self.n_tag))
 
@@ -162,6 +162,35 @@ class PixelCentralSet(object):
             self.tag_pos_dict[tag] = self.tag_pos_dict[tag][np.random.choice(range(self.tag_pos_dict[tag].shape[0]),
                                                                              size=self.tag_pos_dict[tag].shape[0],
                                                                              replace=False), ...]
+    def next_image(self,size=None,fix_transform=None,fix_style=True):
+        if size:
+            if size > self.nImage:
+                raise ValueError(
+                    'image batch size too large: expect 1~{max_num}, get {input}'.format(max_num=self.nImage,input=size))
+            if self.image_pointer + size > self.nImage:
+                print('reset image pointer')
+                self.image_pointer = 0
+            images = self.raw_image[self.image_pointer:(self.image_pointer+size),...]
+            tags = self.raw_tag[self.image_pointer:(self.image_pointer + size), ...]
+            self.image_pointer += size
+        else:
+            images = self.raw_image
+            tags = self.raw_tag
+        if self.normalization and self.normalization[0] and self.normalization[0]=='mean':
+            images = images - np.mean(images,axis=(2,3),keepdims=True) #[BCHW]
+        I = np.random.choice(range(8),size=images.shape[0])
+        for i in range(images.shape[0]):
+            if fix_transform is None:
+                images[i,...] = PixelCentralSet.image_transform(images[i,...],I[i])
+                tags[i,...] = np.squeeze(
+                    PixelCentralSet.image_transform(np.reshape(tags[i,...],(1,tags.shape[1],tags.shape[2])),I[i]))
+            else:
+                images[i, ...] = PixelCentralSet.image_transform(images[i, ...], fix_transform)
+                tags[i, ...] = np.squeeze(
+                    PixelCentralSet.image_transform(np.reshape(tags[i, ...], (1, tags.shape[1], tags.shape[2])), fix_transform))
+        if fix_style:
+            images = images.swapaxes(1,3).swapaxes(1,2)
+        return images,tags
     @property
     def n_tag(self):
         return len(self.tags)
@@ -218,6 +247,7 @@ class PixelCentralSet(object):
         return list(freq.keys())[I]
     @staticmethod
     def image_transform(im,option):
+        #[CHW]
         if option < 4:
             return np.rot90(im,k=option,axes=(2,1))
         else:
