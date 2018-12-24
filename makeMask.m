@@ -21,7 +21,7 @@ function varargout = makeMask(varargin)
 
 % Edit the above text to modify the response to help makeMask
 
-% Last Modified by GUIDE v2.5 12-Nov-2018 15:18:51
+% Last Modified by GUIDE v2.5 24-Dec-2018 15:38:22
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -63,6 +63,8 @@ handles.mixRatio = 0;
 handles.mode = 1;
 handles.bushSize = 1;
 handles.isMouseDown = 0;
+handles.isNormalize = 0;
+handles.isMaskView = 0;
 handles.data = varargin{1};
 handles.mask = zeros(handles.data.imSize);
 handles.slider_ZPos.Min = 1;
@@ -88,25 +90,39 @@ refreshUI(handles);
 % UIWAIT makes makeMask wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
 function refreshUI(h)
-    imMat = h.data.rawData{h.curZPos,h.curChannel,h.curTPos};
-    imMat = repmat(double(imMat)/double(max(imMat(:))),[1,1,3]);
-    maskMat = zeros(h.data.imSize,h.data.imSize,3);
-    for m = 1:3
-        for n = 1:(h.nLabel-1)
-            I = h.mask == n;
-            if sum(I(:)) > 0
-                tmp = maskMat(:,:,m);
-                tmp(I) = h.labelColor(n+1,m);
-                maskMat(:,:,m) = tmp;
+    if h.isMaskView
+        bw = h.mask == h.curLabel;
+        cc = bwconncomp(bw,4);
+        cc_mat = labelmatrix(cc);
+        cc_rgb = label2rgb(cc_mat,'spring','c','shuffle');
+        edge = bwperim(bw);
+        im_overlap = imoverlay(cc_rgb,edge,[0,0,0]);
+        imagesc(h.axes1,im_overlap); xticks([]); yticks([]);
+    else
+        imMat = h.data.rawData{h.curZPos,h.curChannel,h.curTPos};
+        if h.isNormalize
+            imMat = imMat/max(imMat(:));
+            imMat = adapthisteq(imMat);
+        end
+        imMat = repmat(double(imMat)/double(max(imMat(:))),[1,1,3]);
+        maskMat = zeros(h.data.imSize,h.data.imSize,3);
+        for m = 1:3
+            for n = 1:(h.nLabel-1)
+                I = h.mask == n;
+                if sum(I(:)) > 0
+                    tmp = maskMat(:,:,m);
+                    tmp(I) = h.labelColor(n+1,m);
+                    maskMat(:,:,m) = tmp;
+                end
             end
         end
+        overlapMat = imMat * (1-h.mixRatio) + maskMat * h.mixRatio;
+        BW = h.mask == 0;
+        for m = 1:3
+            overlapMat(:,:,m) = overlapMat(:,:,m) + imMat(:,:,m).*BW*h.mixRatio;
+        end
+        imagesc(h.axes1,overlapMat); xticks([]); yticks([]);       
     end
-    overlapMat = imMat * (1-h.mixRatio) + maskMat * h.mixRatio;
-    BW = h.mask == 0;
-    for m = 1:3
-        overlapMat(:,:,m) = overlapMat(:,:,m) + imMat(:,:,m).*BW*h.mixRatio;
-    end
-    imagesc(h.axes1,overlapMat); xticks([]); yticks([]);
     h.txt_curLabel.String = num2str(h.curLabel);
     h.btn_curColor.BackgroundColor = h.labelColor(h.curLabel+1,:);
     h.txt_ZPos.String = sprintf('Z: %d',h.data.sliceInfo(h.curZPos));
@@ -499,3 +515,58 @@ if index
     catch
     end
 end
+
+
+% --- Executes on button press in btn_init_est.
+function btn_init_est_Callback(hObject, eventdata, handles)
+% hObject    handle to btn_init_est (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+answer = questdlg('Estimation Method:','mask','Edge','AutoContour','Edge');
+curIm = handles.data.rawData{handles.curZPos,handles.curChannel,handles.curTPos};
+curIm = curIm/max(curIm(:));
+im = adapthisteq(curIm);
+if strcmp(answer,'Edge')
+    grad = imgradient(curIm);
+    grad = grad/max(grad(:));
+    answer = inputdlg({'intensity','gradients'},'mask',1,{'0.65','0.3'});
+    handles.mask = or(handles.mask,and(im>str2double(answer{1}),grad<str2double(answer{2})));
+else
+    answer = inputdlg({'iteration steps'},'mask',1,{'1000'});
+    handles.mask = segmentImage(im,str2double(answer{1}));
+end
+guidata(hObject,handles);
+refreshUI(handles);
+
+
+
+% --- Executes on button press in rbt_normalize.
+function rbt_normalize_Callback(hObject, eventdata, handles)
+% hObject    handle to rbt_normalize (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.isNormalize = get(hObject,'Value');
+guidata(hObject,handles);
+refreshUI(handles);
+% Hint: get(hObject,'Value') returns toggle state of rbt_normalize
+
+
+% --- Executes on button press in btn_clear.
+function btn_clear_Callback(hObject, eventdata, handles)
+% hObject    handle to btn_clear (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.mask = zeros(size(handles.mask));
+guidata(hObject,handles);
+refreshUI(handles);
+
+
+% --- Executes on button press in rbt_mask_view.
+function rbt_mask_view_Callback(hObject, eventdata, handles)
+% hObject    handle to rbt_mask_view (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.isMaskView = get(hObject,'Value');
+guidata(hObject,handles);
+refreshUI(handles);
+% Hint: get(hObject,'Value') returns toggle state of rbt_mask_view
