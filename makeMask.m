@@ -14,7 +14,6 @@ function varargout = makeMask(varargin)
 %      applied to the GUI before makeMask_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
 %      stop.  All inputs are passed to makeMask_OpeningFcn via varargin.
-%
 %      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
 %
@@ -67,17 +66,17 @@ handles.isMouseDown = 0;
 handles.data = varargin{1};
 handles.mask = zeros(handles.data.imSize);
 handles.slider_ZPos.Min = 1;
-handles.slider_ZPos.Max = handles.data.nZSlice;
+handles.slider_ZPos.Max = length(handles.data.sliceInfo);
 handles.slider_ZPos.Value = 1;
-handles.slider_ZPos.SliderStep = [1,1]/handles.data.nZSlice;
+handles.slider_ZPos.SliderStep = [1,1]/max(1,(length(handles.data.sliceInfo)-1));
 handles.slider_TPos.Min = 1;
-handles.slider_TPos.Max = handles.data.nSteps;
+handles.slider_TPos.Max = length(handles.data.timeInfo);
 handles.slider_TPos.Value = 1;
-handles.slider_TPos.SliderStep = [1,1]/handles.data.nSteps;
+handles.slider_TPos.SliderStep = [1,1]/max(1,(length(handles.data.timeInfo)-1));
 handles.slider_CPos.Min = 1;
-handles.slider_CPos.Max = handles.data.nChannel;
+handles.slider_CPos.Max = length(handles.data.filterInfo);
 handles.slider_CPos.Value = 1;
-handles.slider_CPos.SliderStep = [1,1]/(handles.data.nChannel-1);
+handles.slider_CPos.SliderStep = [1,1]/max(1,(length(handles.data.filterInfo)-1));
 handles.slider_curLabel.Min = 0;
 handles.slider_curLabel.Max = handles.nLabel - 1;
 handles.slider_curLabel.Value = 0;
@@ -110,9 +109,9 @@ function refreshUI(h)
     imagesc(h.axes1,overlapMat); xticks([]); yticks([]);
     h.txt_curLabel.String = num2str(h.curLabel);
     h.btn_curColor.BackgroundColor = h.labelColor(h.curLabel+1,:);
-    h.txt_ZPos.String = sprintf('Z: %d',h.curZPos);
-    h.txt_TPos.String = sprintf('T: %d',h.curTPos);
-    h.txt_CPos.String = sprintf('Channel: %s',h.data.filterInfo{1,h.curChannel,1});
+    h.txt_ZPos.String = sprintf('Z: %d',h.data.sliceInfo(h.curZPos));
+    h.txt_TPos.String = sprintf('T: %d',h.data.timeInfo(h.curTPos));
+    h.txt_CPos.String = sprintf('Channel: %s',h.data.filterInfo{h.curChannel});
     h.txt_mixRatio.String = sprintf('Mix Ratio: %.2f',h.mixRatio);
     h.edt_curBushSize.String = num2str(h.bushSize);
     if h.mode
@@ -317,8 +316,8 @@ function btn_done_Callback(hObject, eventdata, handles)
 % hObject    handle to btn_done (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-assignin('base','imMask',handles.mask);
-csvwrite('image_mask.csv',handles.mask);
+assignin('base',sprintf('imMask_T%d',handles.curTPos),handles.mask);
+csvwrite(sprintf('image_mask_T%d.csv',handles.curTPos),handles.mask);
 disp('successfully export and saved');
 
 
@@ -367,10 +366,17 @@ function btn_action_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 if handles.mode % mode == 1 : region mode
-    mask = roipoly(handles.data.rawData{handles.curZPos,handles.curChannel,handles.curTPos});
-    handles.mask(mask) = handles.curLabel;
-    guidata(hObject,handles);
-    refreshUI(handles);
+    hObject.Enable = 'off';
+    try
+        curIm = handles.data.rawData{handles.curZPos,handles.curChannel,handles.curTPos};
+        mask = roipoly(curIm./max(curIm(:)));
+        handles.mask(mask) = handles.curLabel;
+        guidata(hObject,handles);
+        refreshUI(handles);
+    catch
+        hObject.Enable = 'on';
+    end
+    hObject.Enable = 'on';
 end
 
 

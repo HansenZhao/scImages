@@ -6,8 +6,10 @@ classdef DVImageReader < handle
         nSteps;
         filterInfo;
         timeInfo;
+        sliceInfo;
         rawData;
         fileName;
+        filePath;
     end
     
     properties (Dependent)
@@ -28,69 +30,80 @@ classdef DVImageReader < handle
             end
             tmp = strsplit(fpath,'\');
             obj.fileName = tmp{end}(1:(end-3));
-            res = bfopen(fpath);
-            info = regexp(res{1}{1,2},...
-                'Z=\d/(?<ZSlice>\d+); C=\d/(?<Channel>\d+); T=\d/(?<Steps>\d+)','names');
-            obj.nZSlice = str2double(info.ZSlice);
-            obj.nChannel = str2double(info.Channel);
-            obj.nSteps = str2double(info.Steps);
-            obj.filterInfo = cell(obj.nImages,1);
-            obj.timeInfo = zeros(obj.nImages,1);
-            
-            fieldKeys = res{2}.keys;
-            while(fieldKeys.hasNext)
-                fieldName = fieldKeys.next;
-                tmp = regexp(fieldName,'Global Image (?<imageID>\d+)','names');
-                if ~isempty(tmp)
-                    if contains(fieldName,'Time Point')
-                        getTime = res{2}.get(fieldName);
-                        getTime = strsplit(getTime,' ');
-                        obj.timeInfo(str2double(tmp.imageID)) = str2double(getTime{1});
-                    elseif contains(fieldName,'EM filter')
-                        obj.filterInfo{str2double(tmp.imageID)} = res{2}.get(fieldName);
-                    end
-                end
-            end
-            obj.rawData = res{1}(:,1);
-            obj.rawData = reshape(obj.rawData,[obj.nZSlice,obj.nChannel,obj.nSteps]);
-            obj.filterInfo = reshape(obj.filterInfo,[obj.nZSlice,obj.nChannel,obj.nSteps]);
-            obj.timeInfo = reshape(obj.timeInfo,[obj.nZSlice,obj.nChannel,obj.nSteps]);
+            [~,~,sizeData] = dvreader(fpath,[]);
+            obj.nZSlice = sizeData(1);
+            obj.nChannel = sizeData(2);
+            obj.nSteps = sizeData(3);
+            fprintf(1,'image data with %d slices, %d channels and %d time point\n',...
+            obj.nZSlice,obj.nChannel,obj.nSteps);
+            obj.rawData = {};
+            obj.filePath = fpath;
         end
         
         function res = get.nImages(obj)
-            res = obj.nZSlice*obj.nChannel*obj.nSteps;
+            if isempty(obj.rawData)
+                res = 0;
+            else
+                res = length(obj.rawData(:));
+            end
         end
         
         function res = get.imSize(obj)
-            res = size(obj.rawData{1},1);
+            if isempty(obj.rawData)
+                res = 0;
+            else
+                res = size(obj.rawData{1},1);
+            end
         end
         
-        function im = subSet(obj,Z,T,Channel)
+        function parse(obj,T,Z,C)
+            if nargin == 2 && strcmp(T,'all')
+                T = 1:obj.nSteps;
+                Z = 1:obj.nZSlice;
+                C = 1:obj.nChannel;
+            end
+            [obj.rawData,obj.filterInfo] = dvreader(obj.filePath,T,Z,C);
+            if isempty(T)
+                obj.timeInfo = 1:obj.nSteps;
+            else
+                obj.timeInfo = T;
+            end
+            if isempty(Z)
+                obj.sliceInfo = 1:obj.nZSlice;
+            else
+                obj.sliceInfo =Z;
+            end
+        end
+        
+        function im = subSet(obj,T,Z,Channel)
             if ~exist('Z','var')
-                Z = 1;
+                Z = obj.sliceInfo;
             end
             if ~exist('T','var')
-                T = 1;
+                T = obj.timeInfo;
             end
             if ~exist('Channel','var')
-                Channel = {'POL'};
+                Channel = obj.filterInfo;
             end
-            im = zeros(obj.imSize,obj.imSize,length(Z)*length(T)*length(Channel));
+            im = zeros(obj.imSize,obj.imSize,length(Z)*length(Channel),length(T));
             [~,cIndex] = ismember(Channel,obj.filterInfo(1,:,1));
             if any(cIndex<1)
                 error('unable to find channel: %s',Channel{cIndex(cIndex<1)});
             end
-            if max(Z) > obj.nZSlice
-                error('too large Z slice');
+            [~,zIndex] = ismember(Z,obj.sliceInfo);
+            if any(zIndex<1)
+                error('unable to find slice: %d',Z(find(zIndex<1,1)));
             end
-            if max(T) > obj.nSteps
-                error('too large time steps');
+            [~,tIndex] = ismember(T,obj.timeInfo);
+            if any(tIndex<1)
+                error('unable to find time point: %d',T(find(tIndex<1,1)));
             end
-            counter = 1;
-            for m = 1:length(Z)
-                for n = 1:length(T)
+            
+            for m = 1:length(T)
+                counter = 1;
+                for n = 1:length(Z)
                     for c = 1:length(cIndex)
-                        im(:,:,counter) = obj.rawData{m,cIndex(c),n};
+                        im(:,:,counter,m) = obj.rawData{zIndex(n),cIndex(c),tIndex(m)};
                         counter = counter + 1;
                     end
                 end

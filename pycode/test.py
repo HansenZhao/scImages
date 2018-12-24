@@ -76,7 +76,7 @@ with tf.Session() as sess:
 
 writer.close()
 '''
-data_set = ImageData.PixelCentralSet(fpath='J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_real.mat',half_width=30,normalization=('max',None))
+data_set = ImageData.PixelCentralSet(fpath='J:\\CNN-Cell-profile-XRZhang\\code\\spatial_conti_095_disord.mat',half_width=30,normalization=('max',None))
 model = tfmodel.GeneralNet(construct_str=('conv5-6','relu','pool','conv5-16','relu','pool','flat','dense120','relu','dense84','relu','dense3'))
 im,*_ = data_set.next_set(10,for_train=False)
 model.inference(images=im.swapaxes(1,3))
