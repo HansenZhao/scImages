@@ -57,7 +57,7 @@ classdef DVImageReader < handle
         end
         
         function parse(obj,T,Z,C)
-            if nargin == 2 && strcmp(T,'all')
+            if nargin == 1 || strcmp(T,'all')
                 T = 1:obj.nSteps;
                 Z = 1:obj.nZSlice;
                 C = 1:obj.nChannel;
