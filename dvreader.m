@@ -65,7 +65,11 @@ function [ result,filterInfo,sizeInfo ] = dvreader(fp,T,Z,C)
     javaMethod('merge','loci.formats.MetadataTools',...
         r.getGlobalMetadata(),meta,'Global ');
     for m = 1:sizeC
-        filterInfo{m} = meta.get(sprintf('Global Image %d. EM filter',1+sizeZ*(m-1)));
+        tmp = meta.get(sprintf('Global Image %d. EM filter',1+sizeZ*(m-1)));
+        if isempty(tmp)
+            tmp = 'unknown';
+        end
+        filterInfo{m} = tmp;
     end
     filterInfo = filterInfo(C);
     r.close();
