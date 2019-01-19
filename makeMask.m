@@ -305,7 +305,7 @@ function edt_curBushSize_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 tmp = get(hObject,'String');
 tmp = round(str2double(tmp));
-if ~isnan(tmp)
+if ~isnan(tmp) && tmp < 10
     handles.bushSize = tmp;
     guidata(hObject,handles);
 end
@@ -333,7 +333,7 @@ function btn_done_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 assignin('base',sprintf('imMask_T%d',handles.curTPos),handles.mask);
-csvwrite(sprintf('image_mask_T%d.csv',handles.curTPos),handles.mask);
+csvwrite(sprintf('image_mask_%s_T%d.csv',handles.data.fileName,handles.curTPos),handles.mask);
 disp('successfully export and saved');
 
 
@@ -454,6 +454,7 @@ if isempty(handles.axesLim)
 else
     hObject.String = 'hold';
     handles.axesLim = [];
+    btn_done_Callback(handles.btn_done,eventdata,handles);
 end
 guidata(hObject,handles);
 refreshUI(handles);
@@ -493,27 +494,34 @@ function btn_loadMask_Callback(hObject, eventdata, handles)
 % hObject    handle to btn_loadMask (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-[fn,fp,index] = uigetfile('*.csv');
-if index
-    try
-        mat = importdata(strcat(fp,fn));
-        if size(mat,1) == handles.data.imSize
-            nLabels = length(unique(mat(:)));
-            if max(nLabels,max(mat(:))+1) > handles.nLabel
-                warndlg(sprintf('label number: %d is needed for parsing this mask',max(nLabels,max(mat(:))+1)));
-                return;
-            else
-                handles.mask = mat;
-                guidata(hObject,handles);
-                refreshUI(handles);
-                warndlg('read successfully!');
-            end
-        else
-            warndlg(sprintf('Expected image size: %d, get: %d',handles.data,imSize,size(mat,1)));
-            return;
-        end
-    catch
+a = questdlg('load from...','','workspace','file','file');
+if strcmp(a,'file')
+    [fn,fp] = uigetfile('*.csv');
+    mat = importdata(strcat(fp,fn));
+elseif strcmp(a,'workspace')
+    a = inputdlg('variable name','',1,{''});
+    mat = evalin('base',a{1});
+    if ndims(mat) == 3
+        mat = squeeze(mat(handles.curTPos,:,:));
     end
+end
+try
+    if size(mat,1) == handles.data.imSize
+        nLabels = length(unique(mat(:)));
+        if max(nLabels,max(mat(:))+1) > handles.nLabel
+            warndlg(sprintf('label number: %d is needed for parsing this mask',max(nLabels,max(mat(:))+1)));
+            return;
+        else
+            handles.mask = mat;
+            guidata(hObject,handles);
+            refreshUI(handles);
+            warndlg('read successfully!');
+        end
+    else
+        warndlg(sprintf('Expected image size: %d, get: %d',handles.data,imSize,size(mat,1)));
+        return;
+    end
+catch
 end
 
 
