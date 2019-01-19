@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import time
+import tensorflow as tf
 
 class fix_size_queue(object):
     def __init__(self,size,init_element=None):
@@ -29,6 +30,19 @@ class parameters_record(object):
         with open(fpath+'/'+fname,'w') as file:
             for key,value in self.parameter_dict.items():
                 file.write(key+'='+str(value)+'\n')
+    def read_config(self,fpath):
+        tmp=fpath.split('\\')
+        model_name = tmp[-1]
+        full_path = fpath + '\\config\\' + model_name + '.txt'
+        if not os.path.exists(full_path):
+            raise ValueError('Cannot found file {path}'.format(path=full_path))
+        config_dic = {}
+        with open(full_path,'r') as fileReader:
+            for line in fileReader:
+                # print(line)
+                tmp = line.split('=')
+                config_dic[tmp[0]] = tmp[1].rstrip()
+        return config_dic
 
 class hyparam_search_csv_record(object):
     def __init__(self,params_name,fpath=None,fname=None):
