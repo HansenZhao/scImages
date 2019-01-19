@@ -1,11 +1,11 @@
 import scipy.io as sio
-import easygui
+#import easygui
 import numpy as np
 
 class PixelCentralSet(object):
     def __init__(self,fpath = None,half_width = 30,develope_ratio = 0.1,normalization = ('median','mean')):
-        if not fpath:
-            fpath = easygui.fileopenbox()
+        #if not fpath:
+            # fpath = easygui.fileopenbox()
         image_data = sio.loadmat(fpath)
         if len(image_data['tag'].shape) == 2:
             image_data['tag'] = image_data['tag'].reshape(image_data['tag'].shape[0],image_data['tag'].shape[1],1)
@@ -173,6 +173,28 @@ class PixelCentralSet(object):
             images = self.raw_image[self.image_pointer:(self.image_pointer+size),...]
             tags = self.raw_tag[self.image_pointer:(self.image_pointer + size), ...]
             self.image_pointer += size
+        else:
+            images = self.raw_image
+            tags = self.raw_tag
+        if self.normalization and self.normalization[0] and self.normalization[0]=='mean':
+            images = images - np.mean(images,axis=(2,3),keepdims=True) #[BCHW]
+        I = np.random.choice(range(8),size=images.shape[0])
+        for i in range(images.shape[0]):
+            if fix_transform is None:
+                images[i,...] = PixelCentralSet.image_transform(images[i,...],I[i])
+                tags[i,...] = np.squeeze(
+                    PixelCentralSet.image_transform(np.reshape(tags[i,...],(1,tags.shape[1],tags.shape[2])),I[i]))
+            else:
+                images[i, ...] = PixelCentralSet.image_transform(images[i, ...], fix_transform)
+                tags[i, ...] = np.squeeze(
+                    PixelCentralSet.image_transform(np.reshape(tags[i, ...], (1, tags.shape[1], tags.shape[2])), fix_transform))
+        if fix_style:
+            images = images.swapaxes(1,3).swapaxes(1,2)
+        return images,tags
+    def index_image(self,idx=None,fix_transform=None,fix_style=True):
+        if idx:
+            images = self.raw_image[idx,...]
+            tags = self.raw_tag[idx, ...]
         else:
             images = self.raw_image
             tags = self.raw_tag
