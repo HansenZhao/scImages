@@ -18,6 +18,7 @@ classdef SIMSTxtReader < handle
         nChannel;
         nImages;
         imSize;
+        sumRes;
     end
     
     methods
@@ -67,6 +68,13 @@ classdef SIMSTxtReader < handle
         
         function nIm = get.nImages(obj)
             nIm = obj.nChannel;
+        end
+        
+        function r = get.sumRes(obj)
+            r = zeros(obj.imSize);
+            for m = 1:obj.nImages
+                r = r + obj.rawData{m};
+            end
         end
         
         function imS = get.imSize(obj)
