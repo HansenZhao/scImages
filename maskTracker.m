@@ -22,7 +22,7 @@ function varargout = maskTracker(varargin)
 
 % Edit the above text to modify the response to help maskTracker
 
-% Last Modified by GUIDE v2.5 18-Jan-2019 14:58:19
+% Last Modified by GUIDE v2.5 04-Mar-2019 21:04:11
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -97,10 +97,13 @@ else
     handles.sd_curChannel.SliderStep = [1,1];
 end
 % Update handles structure
+handles.cb_lockTrack.Enable = 'off';
 handles.trackControl = [];
 handles.isTrackMode = false;
 handles.displayLength = 2;
 handles.maxTrackDist = inf;
+handles.areaFactor = nan;
+handles.curTrack = 0;
 handles.csfObjs{handles.curFrame} = updateUI(handles);
 guidata(hObject, handles);
 linkaxes([handles.ax_rawSeg,handles.ax_finalSeg,handles.ax_overlay],'xy');
@@ -148,6 +151,8 @@ function [csfObj,controller] = updateUI(handles,isFull)
         handles.btn_trackNext.Enable = 'on';
         handles.edt_maxDist.Enable = 'on';
         handles.btn_trackTillEnd.Enable = 'on';
+        handles.cb_areaCost.Enable = 'on';
+        handles.edt_areaCost.Enable = 'on';
         handles.sd_curFrame.Enable = 'off';
     else
         handles.btn_trackMode.BackgroundColor = 0.85*ones(1,3);
@@ -160,9 +165,12 @@ function [csfObj,controller] = updateUI(handles,isFull)
         cla(handles.ax_trackMap);
         xticks(handles.ax_trackMap,[]);
         yticks(handles.ax_trackMap,[]);
+        handles.cb_areaCost.Enable = 'off';
+        handles.edt_areaCost.Enable = 'off';
         handles.sd_curFrame.Enable = 'on';
     end
     handles.edt_overlayRatio.String = num2str(handles.overlayRatio);
+    handles.edt_curCell.String = num2str(handles.curCell);
     handles.tx_t.String = sprintf('T: %d/%d',handles.curFrame,handles.dvObj.nSteps);
     handles.tx_z.String = sprintf('Z: %d/%d',handles.curZPos,handles.dvObj.nZSlice);
     handles.tx_c.String = sprintf('C: %d/%d',handles.curChannel,handles.dvObj.nChannel);
@@ -191,10 +199,14 @@ function [csfObj,controller] = updateUI(handles,isFull)
     end
     csfObj = CellSegFrame(L,handles.dvObj.subSet(handles.curFrame));
     %% single cell
-    scImage = csfObj.getCellMaskedImage(handles.curCell,max([csfObj.maxLength,handles.fixSize]),...
-        'median',handles.cb_scBGSub.Value);
-    index = handles.dvObj.nChannel*(handles.curZPos-1)+handles.curChannel;
-    imagesc(handles.ax_singleCell,squeeze(scImage(:,:,index)));
+    if handles.curCell > 0
+        scImage = csfObj.getCellMaskedImage(handles.curCell,max([csfObj.maxLength,handles.fixSize]),...
+            'median',handles.cb_scBGSub.Value);
+        index = handles.dvObj.nChannel*(handles.curZPos-1)+handles.curChannel;
+        imagesc(handles.ax_singleCell,squeeze(scImage(:,:,index)));
+    else
+        imagesc(handles.ax_singleCell,zeros(handles.fixSize));
+    end
     xticks(handles.ax_singleCell,[]);
     yticks(handles.ax_singleCell,[]);
     handles.tx_cellSizeRange.String = sprintf('%d-%d',min(csfObj.cellArea),max(csfObj.cellArea));
@@ -205,6 +217,13 @@ function [csfObj,controller] = updateUI(handles,isFull)
     handles.maxTrackDist = min([handles.maxTrackDist,csfObj.maxLength]);
     handles.edt_displayLength.String = num2str(handles.displayLength);
     handles.edt_maxDist.String = num2str(handles.maxTrackDist);
+    if handles.cb_areaCost.Value
+        handles.edt_areaCost.Enable = 'on';
+        handles.edt_areaCost.String = num2str(handles.areaFactor);
+    else
+        handles.edt_areaCost.Enable = 'off';
+        handles.edt_areaCost.String = 'disabled';
+    end
     handles.edt_rollbackFrame.String = '';
     if isFull
         if handles.isTrackMode 
@@ -214,13 +233,18 @@ function [csfObj,controller] = updateUI(handles,isFull)
                 end
                 handles.trackControl = CellTrackController(csfObj,handles.dvObj.nSteps);
             elseif handles.curFrame == (handles.trackControl.curFrame + 1)
-                handles.trackControl.commitNew(csfObj,handles.maxTrackDist);
+                % track next frame
+                [maxTrackDist,af] = determineMDAF(handles);
+                handles.trackControl.commitNew(csfObj,maxTrackDist,af);
             elseif handles.curFrame <= handles.trackControl.curFrame
                 handles.trackControl.rollBackTo(handles.curFrame);
                 if handles.curFrame == 1
                     handles.trackControl = CellTrackController(csfObj,handles.dvObj.nSteps);
                 else
-                    handles.trackControl.refreshCurFrame(csfObj,handles.maxTrackDist);
+                    % refresh current frame
+                    handles.trackControl.rollBackTo();
+                    [maxTrackDist,af] = determineMDAF(handles);
+                    handles.trackControl.commitNew(csfObj,maxTrackDist,af);
                 end
             else
                 error('unsolved track action, current frame: %d, record frame: %d',...
@@ -276,6 +300,20 @@ function [im,L] = procImage(rawMat,handles)
         mask = L == handles.curCell;
         im(repmat(mask,[1,1,3])) = intmax('uint8');
     end
+    
+function [maxTrackDist,af] = determineMDAF(handles)
+    handles.maxTrackDist = min([handles.maxTrackDist,handles.trackControl.curCSF.maxLength]);
+    maxTrackDist = min(handles.trackControl.inferMaxDist,handles.maxTrackDist);
+    if handles.cb_areaCost.Value
+        if isnan(handles.areaFactor)
+            handles.edt_areaCost.String = num2str(handles.trackControl.inferAreaFac);
+            af = handles.trackControl.inferAreaFac;
+        else
+            af = handles.areaFactor;
+        end
+    else
+        af = -1;
+    end
 
 % --- Outputs from this function are returned to the command line.
 function varargout = maskTracker_OutputFcn(hObject, eventdata, handles) 
@@ -318,6 +356,7 @@ function btn_trackNext_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 if handles.curFrame == handles.dvObj.nSteps
     warndlg('Track done!','MT');
+    handles.cb_lockTrack.Enable = 'off';
     return
 else
     handles.curFrame = handles.curFrame + 1;
@@ -366,6 +405,14 @@ function sd_curFrame_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.curFrame = round(get(hObject,'Value'));
+if handles.cb_lockTrack.Value
+    cellID = handles.trackControl.trackArray{handles.curTrack}(handles.curFrame);
+    if cellID > 0
+        handles.curCell = cellID;
+    else
+        handles.curCell = -1;
+    end
+end
 handles.csfObjs{handles.curFrame} = updateUI(handles);
 guidata(hObject,handles);
 % Hints: get(hObject,'Value') returns position of slider
@@ -828,7 +875,8 @@ for m = 1:nFrame
     rawMask = squeeze(handles.predMat(frame,:,:)==2);
     [~,L] = procImage(rawMask,handles);
     csfObj = CellSegFrame(L,handles.dvObj.subSet(frame));
-    handles.trackControl.commitNew(csfObj,handles.maxTrackDist);
+    [maxTrackDist,af] = determineMDAF(handles);
+    handles.trackControl.commitNew(csfObj,maxTrackDist,af);
     if mod(m,5)==0
         waitbar(m/nFrame,hbar);
     end
@@ -848,3 +896,161 @@ function btn_expToWS_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 assignin('base','trackControl',handles.trackControl)
+disp('EXPORT DONE');
+
+
+% --- Executes on button press in cb_areaCost.
+function cb_areaCost_Callback(hObject, eventdata, handles)
+% hObject    handle to cb_areaCost (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+[handles.csfObjs{handles.curFrame},handles.trackControl] = updateUI(handles,1);
+guidata(hObject,handles);
+% Hint: get(hObject,'Value') returns toggle state of cb_areaCost
+
+
+
+function edt_areaCost_Callback(hObject, eventdata, handles)
+% hObject    handle to edt_areaCost (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.areaFactor = str2double(get(hObject,'String'));
+[handles.csfObjs{handles.curFrame},handles.trackControl] = updateUI(handles,1);
+guidata(hObject,handles);
+% Hints: get(hObject,'String') returns contents of edt_areaCost as text
+%        str2double(get(hObject,'String')) returns contents of edt_areaCost as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function edt_areaCost_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edt_areaCost (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function edt_curCell_Callback(hObject, eventdata, handles)
+% hObject    handle to edt_curCell (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+cellID = str2double(get(hObject,'String'));
+if cellID >= 1 && cellID <= handles.dvObj.nSteps
+    handles.curCell = cellID;
+end
+updateUI(handles);
+guidata(hObject,handles);
+% Hints: get(hObject,'String') returns contents of edt_curCell as text
+%        str2double(get(hObject,'String')) returns contents of edt_curCell as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function edt_curCell_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edt_curCell (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in cb_lockTrack.
+function cb_lockTrack_Callback(hObject, eventdata, handles)
+% hObject    handle to cb_lockTrack (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+if get(hObject,'Value')
+    handles.edt_curCell.Enable = 'off';
+    handles.btn_nextCell.Enable = 'off';
+    handles.btn_lastCell.Enable = 'off';
+    handles.curTrack = handles.trackControl.cellIndex2trackID(handles.curCell,handles.curFrame);
+else
+    handles.edt_curCell.Enable = 'on';
+    handles.btn_nextCell.Enable = 'on';
+    handles.btn_lastCell.Enable = 'on';
+    handles.curCell = 1;
+end
+updateUI(handles);
+guidata(hObject,handles);
+% Hint: get(hObject,'Value') returns toggle state of cb_lockTrack
+
+
+% --- Executes on button press in btn_closeGap.
+function btn_closeGap_Callback(hObject, eventdata, handles)
+% hObject    handle to btn_closeGap (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.trackControl = handles.trackControl.closeGap(1,3);
+updateUI(handles,0);
+handles.trackControl.trackMap(handles.ax_trackMap);
+guidata(hObject,handles);
+disp('CLOSE GAP DONE!');
+
+
+% --- Executes on button press in btn_exportCellImage.
+function btn_exportCellImage_Callback(hObject, eventdata, handles)
+% hObject    handle to btn_exportCellImage (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+answer = questdlg('masktracker','Export as...','MAT','images','MAT');
+if ~isempty(answer)
+    cells = matList(1000);
+    cellFeature = matList(1000);
+    h = waitbar(0,'collecting data...');
+    for m = 1:handles.dvObj.nSteps
+%     for m = 1:1
+        rawMask = squeeze(handles.predMat(m,:,:)==2);
+        [~,L] = procImage(rawMask,handles);
+        csfObj = CellSegFrame(L,handles.dvObj.subSet(m));
+        for n = 1:csfObj.nCell
+            cells.addOne(uint16(csfObj.getCellMaskedImage(n,handles.fixSize,'zero',1)));
+            cellFeature.addOne([cellFeature.len,m,n,csfObj.cellArea(n),csfObj.cellPos(n,:)]);
+        end
+        if mod(m,20) == 0
+            waitbar(0.8*m/handles.dvObj.nSteps,h);
+        end
+    end
+    mkdir('cell_images');
+    if strcmp(answer,'MAT')
+        cells.saveAsMAT('cell_images\image.mat');       
+    else
+        index = handles.dvObj.nChannel*(handles.curZPos-1)+handles.curChannel;
+        for m = 1:cells.len
+            imwrite(uint16(cells.data{m}(:,:,index)),sprintf('cell_images\\cell_%d.tif',m));
+        end
+    end
+    waitbar(0.9,h);
+    cellFeature.saveAsTable('cell_images\feature.csv','index,frame,frameId,area,x,y');
+    close(h);
+end
+
+
+% --- Executes on button press in btn_exportConfig.
+function btn_exportConfig_Callback(hObject, eventdata, handles)
+% hObject    handle to btn_exportConfig (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+[fn,fp] = uiputfile('*.txt');
+fid = fopen(strcat(fp,fn),'w');
+fprintf(fid,'fill hole: %d\n',strcmp(handles.cb_fillHole.Enable,'on'));
+fprintf(fid,'eliminate edge: %d\n',strcmp(handles.cb_eedge.Enable,'on'));
+fprintf(fid,'remove small: %d\n',strcmp(handles.cb_rmSmall.Enable,'on'));
+fprintf(fid,'small threshold: %d\n',handles.rmSmallThres);
+fprintf(fid,'break bridge: %d\n',strcmp(handles.cb_breakBridge.Enable,'on'));
+cont = cellstr(handles.pm_breakMethod.String);
+fprintf(fid,'break method: %s\n',cont{handles.pm_breakMethod.Value});
+fprintf(fid,'break threshold: %d\n',handles.bbThres);
+fprintf(fid,'region extend: %d\n',strcmp(handles.cb_regionExt.Enable,'on'));
+cont = cellstr(handles.pm_rExtMethod.String);
+fprintf(fid,'extend method: %s\n',cont{handles.pm_rExtMethod.Value});
+fprintf(fid,'extend threshold: %d\n',handles.rExtThres);
+fclose(fid);
+msgbox('output done!');
