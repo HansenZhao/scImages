@@ -103,6 +103,10 @@ classdef CellSegFrame
             if ~exist('BGSub','var')
                 BGSub = 1;
             end
+            if s < obj.maxLength
+                error('CellSegFrame: cell mask length %d smaller than max length %d!',...
+                    s,obj.maxLength);
+            end
             switch fillMethod
                 case 'median'
                     fillValue = obj.bgIntense;
